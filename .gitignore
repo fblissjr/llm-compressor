@@ -1,6 +1,9 @@
 # Packaging
 *.tar.gz
 tensorboard/*
+models/
+*.safetensors
+*.jsonl
 # Created by .ignore support plugin (hsz.mobi)
 !/data/.gitkeep
 # tranformer stuff
