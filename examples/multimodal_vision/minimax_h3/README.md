@@ -44,11 +44,11 @@ uvx --from huggingface-hub hf download \
 ```
 
 Restart ComfyUI, then add **Load MiniMax H3 Compressed-Tensors AWQ Encoder**
-(`MiniMaxH3AWQEncoderLoader`). The node lists real `.safetensors` files and
+([`MiniMaxH3AWQEncoderLoader`](./comfyui_minimax_h3_awq_loader.py)). The node lists real `.safetensors` files and
 accepts by metadata, packing, config, and complete tensor inventory—not by a
 hardcoded filename.
 
-Do not install the standalone `.py` beside the full
+Do not install the standalone [`comfyui_minimax_h3_awq_loader.py`](./comfyui_minimax_h3_awq_loader.py) beside the full
 [ComfyUI-h3-explorations](https://github.com/fblissjr/ComfyUI-h3-explorations)
 repo. Both register the same loader node ID.
 
