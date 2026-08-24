@@ -18,16 +18,16 @@ pipeline_tag: image-text-to-text
 # Qwen3-VL-32B-W4A16-AWQ-H3
 
 The full 64-layer Qwen3-VL 32B encoder from MiniMax H3, compressed as
-symmetric group-128 W4A16 AWQ and calibrated on H3 text, keyframe, and
-multimodal-reference prompts. Language linears are W4; the vision tower,
-DeepStack projections, token embedding, and normalization weights remain BF16.
-The single-file checkpoint is 18.99 GB, down from 66.7 GB BF16.
+symmetric group-128 W4A16 AWQ and calibrated on 96 multimodal prompts and
+reference image pairs from H3-IR, local generation frame-0 extracts, and H3
+avatar dialogue datasets. Language linears are W4; the vision tower, DeepStack
+projections, token embedding, and normalization weights remain BF16. The
+single-file checkpoint is 18.99 GB, down from 66.7 GB BF16.
 
 ## ComfyUI quickstart
 
-This repository includes a self-contained ComfyUI node. It embeds the four
-small runtime configs, so there is no config folder to install and no custom
-node repository to clone.
+The included loader is one self-contained `.py` file; there is no config folder
+or custom-node repository to clone.
 
 ```bash
 COMFYUI_DIR=/path/to/ComfyUI
@@ -44,9 +44,9 @@ uvx --from huggingface-hub hf download \
 ```
 
 Restart ComfyUI, then add **Load MiniMax H3 Compressed-Tensors AWQ Encoder**
-([`MiniMaxH3AWQEncoderLoader`](./comfyui_minimax_h3_awq_loader.py)). The node lists real `.safetensors` files and
-accepts by metadata, packing, config, and complete tensor inventory—not by a
-hardcoded filename.
+([`MiniMaxH3AWQEncoderLoader`](./comfyui_minimax_h3_awq_loader.py)). Selection
+is validated from checkpoint metadata and tensor inventory, not a hardcoded
+filename.
 
 Do not install the standalone [`comfyui_minimax_h3_awq_loader.py`](./comfyui_minimax_h3_awq_loader.py) beside the full
 [ComfyUI-h3-explorations](https://github.com/fblissjr/ComfyUI-h3-explorations)
@@ -60,21 +60,25 @@ uvx --from huggingface-hub hf download \
   comfyui_minimax_h3_awq_text_to_video.json \
   comfyui_minimax_h3_awq_image_reference.json \
   comfyui_minimax_h3_awq_first_frame.json \
+  comfyui_minimax_h3_awq_first_last_frame.json \
+  comfyui_minimax_h3_encoder_ab_compare.json \
   --local-dir "$COMFYUI_DIR/user/default/workflows"
 ```
 
 - [Text to video](./comfyui_minimax_h3_awq_text_to_video.json)
 - [Image references plus text](./comfyui_minimax_h3_awq_image_reference.json)
 - [First frame to video](./comfyui_minimax_h3_awq_first_frame.json)
+- [First and last frames](./comfyui_minimax_h3_awq_first_last_frame.json)
+- [Two-clip side-by-side viewer](./comfyui_minimax_h3_encoder_ab_compare.json)
 
-They are derived from ComfyUI's official H3 templates. Other than this
-encoder loader, their H3 conditioning, sampling, AV decode, and save nodes are
-native ComfyUI. Select your own images in the reference and first-frame files.
+The four generation examples are derived from ComfyUI's official H3 templates;
+only the text-encoder loader is custom. Select your own images. The comparison
+viewer requires VideoHelperSuite and ComfyUI-KJNodes and intentionally omits
+audio.
 
-The text and first-frame examples use the current provisional owner recipe:
-the v1.1 768p FL2VA LoRA at strength 0.75, six render steps, and shift 6/3.
-That is a working recipe, not a vendor-attested v1.1 schedule. Install its
-LoRA at the path stored by those workflows:
+The text and keyframe examples use the current owner recipe: v1.1 768p FL2VA
+LoRA, strength 0.75, six render steps, shift 6/3. This is a working recipe, not
+a vendor-attested v1.1 schedule:
 
 ```bash
 uvx --from huggingface-hub hf download \
@@ -83,9 +87,8 @@ uvx --from huggingface-hub hf download \
   --local-dir "$COMFYUI_DIR/models/loras/h3/lightx2v_Minimax-h3-Turbo"
 ```
 
-The image-reference example uses the separate native ref2va base recipe. The
-workflows also need the diffusion model and video/audio VAEs named in their
-nodes; their embedded template metadata points to Comfy-Org/MiniMax-H3.
+The image-reference example uses the separate native ref2va base recipe. Model
+links for the diffusion weights and VAEs are embedded in each workflow.
 
 ## What the loader adds
 
@@ -93,17 +96,31 @@ Stock `CLIPLoader` correctly loads Comfy-formatted INT8 ConvRot and NVFP4-AWQ
 H3 encoders as the native 5120-wide, 50-layer model. It does not load this
 checkpoint's full Hugging Face namespace and compressed-tensors records.
 
-The custom node strictly validates and adapts that representation in memory,
-keeps only the 50 H3 language layers, uses the artifact's image/video processor
-configs, and executes W4A16 through comfy-kitchen. ComfyUI still owns the H3
-architecture, tokenizer, unnormalized layer-50 output, modality tags,
+The custom node validates and adapts the full-HF compressed-tensors checkpoint
+in memory, retains H3's first 50 language layers, applies the artifact's
+processor configs, and executes W4A16 through comfy-kitchen. ComfyUI still owns
+the H3 architecture, tokenizer, unnormalized layer-50 output, modality tags,
 conditioning, offload, and model patching.
 
 See the
 [technical note](https://github.com/fblissjr/ComfyUI-h3-explorations/blob/main/docs/h3_awq_encoder.md)
-for the exact native/local boundary and current CUDA routing. Text-only and
-two-image conditioning were validated on an RTX 4090; comparative
-BF16/INT8/NVFP4/W4 speed and fidelity remain to be measured.
+for the exact native/local boundary and current CUDA routing.
+
+## Initial RTX 4090 timing
+
+One cold-unload run per encoder, 362 frames / 15.08 seconds, identical graph,
+prompt, seed, and generation settings within each row:
+
+| workflow | W4A16 | INT8 ConvRot | NVFP4 |
+|---|---:|---:|---:|
+| first frame, 640×640, 6 steps | **171.9s** | 182.5s | 173.5s |
+| two-image reference, 864×480, 20 steps | **537.4s** | 551.3s | 544.9s |
+
+This is provisional `n=1` end-to-end timing, not a fidelity ranking. The W4
+loader also uses its artifact-owned image processor, so these runs do not
+isolate quantization error from preprocessing. Use the included comparison
+viewer for blind clip review; the complete methodology and raw rows live in
+[ComfyUI-h3-explorations](https://github.com/fblissjr/ComfyUI-h3-explorations).
 
 ## Serving
 
