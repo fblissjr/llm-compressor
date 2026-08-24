@@ -63,10 +63,9 @@ def build_h3_calibration_dataset(
 ) -> Dataset:
     raw_pairs = []
 
-    # Calculate proportional splits
-    h3_ir_target = int(num_total_samples * 0.52)
-    local_target = int(num_total_samples * 0.31)
-    avatar_target = num_total_samples - h3_ir_target - local_target
+    # Calculate proportional splits between H3-IR and local extracted metadata
+    h3_ir_target = int(num_total_samples * 0.60)
+    local_target = num_total_samples - h3_ir_target
 
     # Source 1: StellarVoyager/H3-IR (Primary Dataset)
     print(f"Loading {h3_ir_target} samples from primary dataset: StellarVoyager/H3-IR...")
@@ -87,11 +86,11 @@ def build_h3_calibration_dataset(
                     except Exception:
                         pass
     except Exception as e:
-        print(f"Notice: Could not load H3-IR online ({e}), falling back to synthetic samples.")
+        print(f"Notice: Could not load H3-IR online ({e}), falling back to available samples.")
 
     print(f"H3-IR collected: {len(raw_pairs)} samples.")
 
-    # Source 2: Optional Local Dataset
+    # Source 2: Local Workflow Metadata Dataset
     if local_dataset_jsonl and os.path.exists(local_dataset_jsonl):
         print(f"Loading up to {local_target} samples from local dataset: {local_dataset_jsonl}...")
         try:
@@ -101,7 +100,7 @@ def build_h3_calibration_dataset(
             random.seed(42)
             random.shuffle(local_rows)
             for row in local_rows:
-                if len(raw_pairs) >= h3_ir_target + local_target:
+                if len(raw_pairs) >= num_total_samples:
                     break
                 if "file_path" in row and os.path.exists(row["file_path"]):
                     img = extract_first_frame_ffmpeg(row["file_path"])
@@ -109,19 +108,6 @@ def build_h3_calibration_dataset(
                         raw_pairs.append((img, row["full_prompt"]))
         except Exception as e:
             print(f"Notice: Could not load local dataset ({e})")
-
-    # Source 3: oakmindai/minimax_h3_avatar_500
-    print(f"Loading up to {avatar_target} samples from oakmindai/minimax_h3_avatar_500...")
-    try:
-        pfile = hf_hub_download(repo_id="oakmindai/minimax_h3_avatar_500", filename="data/train-00000-of-00001.parquet", repo_type="dataset")
-        tbl = pq.read_table(pfile, columns=["image", "text"])
-        for i in range(min(avatar_target, len(tbl))):
-            ibytes = tbl["image"][i].as_py()["bytes"]
-            tprompt = tbl["text"][i].as_py()
-            img = Image.open(io.BytesIO(ibytes)).convert("RGB")
-            raw_pairs.append((img, tprompt))
-    except Exception as e:
-        print(f"Notice: Could not load avatar_500 ({e})")
 
     # Fallback padding if needed
     if len(raw_pairs) < num_total_samples:
